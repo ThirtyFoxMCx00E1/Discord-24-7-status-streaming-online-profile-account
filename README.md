@@ -62,6 +62,16 @@ A phone or home connection is also less likely to look suspicious to Discord tha
 
 Your Discord token goes **only** in the GitHub secret / MP Railway env - never in code or commits.
 
+## Website (GitHub Pages)
+
+The `docs/` folder is published as a website by `.github/workflows/pages.yml`
+(https://thirtyfoxmcx00e1.github.io/Discord-24-7-status-streaming-online-profile-account/).
+It shows the video with **Watch**, **Subscribe** and **Join** buttons - all three, since a web page has no 2-button limit.
+
+1. Repo > Settings > Pages > Source: **GitHub Actions** (once).
+2. Edit `docs/config.json` (`title`, `video`, `channel`) and push - the site updates itself.
+   Subscribe and Join appear when `channel` is set, e.g. `https://www.youtube.com/@yourhandle`.
+
 ## Never share your token
 
 Anyone with your token can log in as you without the password or 2FA.
