@@ -21,6 +21,15 @@ const BUTTONS = (process.env.BUTTONS || "watch,subscribe")
   .filter(Boolean);
 
 const STATUS = process.env.STATUS || "idle"; // online, idle, dnd, offline
+
+// The Discord application the presence is attached to. Create one at
+// https://discord.com/developers/applications and copy its Application ID.
+// It does not have to be tied to your account; it only has to be a real application ID.
+const APPLICATION_ID = (process.env.APPLICATION_ID || "1426964594215227456").trim();
+if (!/^\d{17,20}$/.test(APPLICATION_ID)) {
+  console.error("APPLICATION_ID must be the 17-20 digit Application ID from the Discord Developer Portal.");
+  process.exit(1);
+}
 const TIMEZONE = process.env.TIMEZONE || "Asia/Manila";
 
 const BUTTON_DEFS = {
@@ -104,7 +113,7 @@ client.on("ready", async () => {
   const emoji = getEmoji(currentHour);
 
   const r = new Discord.RichPresence(client)
-    .setApplicationId("1426964594215227456")
+    .setApplicationId(APPLICATION_ID)
     .setType("STREAMING")
     .setURL(VIDEO_URL) // must be a YouTube video link
     .setState("​🇲🇾 🇩🇪🇦🇷")

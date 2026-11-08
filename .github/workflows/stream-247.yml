@@ -6,7 +6,10 @@
 # Setup (repo > Settings > Secrets and variables > Actions):
 #   Secret   TOKEN             your Discord account token (never put it in the code)
 #   Variable YT_CHANNEL_URL    e.g. https://www.youtube.com/@yourhandle   (Subscribe / Join buttons)
-#   Optional variables: BUTTONS (e.g. watch,join), VIDEO_URL, STATUS, TIMEZONE
+#   Variable DISCORD_USER_ID   your numeric Discord user ID - the run stops if TOKEN belongs to another account
+#   Optional variables: APPLICATION_ID, BUTTONS (e.g. watch,join), VIDEO_URL, STATUS, TIMEZONE
+# The console page (docs/console.html) shows this runner's state; the shift publishes its status to the
+# `live-status` branch every 10 minutes for it.
 # Then: Actions > "Streaming 24/7 runner" > Run workflow (once). Turn it off: variable STREAM_RUNNER = off.
 # Needs a PUBLIC repo (a private repo would use up the free Actions minutes in about a day and a half).
 name: Streaming 24/7 runner
@@ -25,7 +28,7 @@ on:
     - cron: '7 * * * *'
 
 permissions:
-  contents: read
+  contents: write   # only to publish status.json to the live-status branch
   actions: write
 
 jobs:
@@ -38,6 +41,8 @@ jobs:
       RUN_ID: ${{ github.run_id }}
       TOKEN: ${{ secrets.TOKEN }}
       YT_CHANNEL_URL: ${{ vars.YT_CHANNEL_URL }}
+      DISCORD_USER_ID: ${{ vars.DISCORD_USER_ID }}
+      APPLICATION_ID: ${{ vars.APPLICATION_ID }}
       BUTTONS: ${{ vars.BUTTONS }}
       VIDEO_URL: ${{ vars.VIDEO_URL }}
       STATUS: ${{ vars.STATUS }}
@@ -75,6 +80,10 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Check the token belongs to your account
+        if: steps.guard.outputs.run == '1'
+        run: node scripts/check-token.js
+
       - name: Install
         if: steps.guard.outputs.run == '1'
         run: npm ci --omit=dev || npm install --omit=dev
@@ -110,10 +119,17 @@ jobs:
           }
           handover() { echo "A newer shift is already online (duplicate) - stopping this one"; stop_bot; exit 0; }
 
-          end=$(( $(date +%s) + SHIFT_MIN * 60 ))
-          last=$(date +%s)
+          export SHIFT_START=$(date +%s)
+          end=$(( SHIFT_START + SHIFT_MIN * 60 ))
+          last=$SHIFT_START
+          pub=0
           while [ "$(date +%s)" -lt "$end" ]; do
             sleep 60
+            # status for docs/console.html: first after a minute, then every 10 minutes; never allowed to hurt the shift
+            if [ $(( $(date +%s) - pub )) -ge 600 ]; then
+              pub=$(date +%s)
+              timeout 90 bash scripts/publish-status.sh >/dev/null 2>&1 || true
+            fi
             if [ -f bot.dead ]; then
               echo "::error title=Streaming runner::The bot keeps dying at start-up. Check the TOKEN secret (it may be invalid or reset)."
               tail -n 20 bot.log; exit 1

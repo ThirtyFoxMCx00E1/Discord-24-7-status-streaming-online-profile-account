@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Streaming 24/7 console</title>
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' https://api.github.com https://raw.githubusercontent.com; img-src data:; base-uri 'none'; form-action 'none'">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232d6cdf'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #131a27;
+  --top: #1c2535;
+  --tabs: #263349;
+  --card: #2a3850;
+  --line: #34445f;
+  --text: #e6ebf5;
+  --muted: #8c9ab3;
+  --blue: #2d6cdf;
+  --blue-h: #3b7bf0;
+  --grey: #3c485e;
+  --grey-h: #4a5871;
+  --red: #d63b45;
+  --red-h: #e64d57;
+  --green: #3ecf8e;
+  --amber: #f0b429;
+  --off: #d63b45;
+  --term: #0b1019;
+  --term-text: #d8e0ee;
+  --tag: #e8b33a;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+a { color: #8fb4ff; }
+button { font: inherit; }
+:focus-visible { outline: 3px solid #8fb4ff; outline-offset: 2px; }
+
+.top {
+  background: var(--top);
+  border-bottom: 1px solid var(--line);
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.brand { font-size: 1.25rem; font-weight: 700; letter-spacing: 0.01em; }
+.top a { font-size: 0.9rem; color: var(--muted); text-decoration: none; }
+.top a:hover { color: var(--text); }
+
+.tabs {
+  background: var(--tabs);
+  display: flex;
+  gap: 4px;
+  padding: 0 14px;
+  overflow-x: auto;
+}
+.tabs button {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 13px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tabs button:hover { color: var(--text); }
+.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: #4aa8ff; }
+
+main { max-width: 1180px; margin: 0 auto; padding: 28px 20px 40px; }
+.head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+h1 { margin: 0; font-size: 2rem; line-height: 1.1; }
+.sub { margin: 4px 0 0; color: var(--muted); font-size: 0.95rem; }
+.power { display: flex; gap: 10px; }
+.power button {
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  padding: 10px 22px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--grey);
+}
+.power button:hover:not(:disabled) { background: var(--grey-h); }
+.power .start { background: var(--blue); }
+.power .start:hover:not(:disabled) { background: var(--blue-h); }
+.power .stop { background: var(--red); }
+.power .stop:hover:not(:disabled) { background: var(--red-h); }
+.power button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.note { min-height: 1.4em; margin: 0 0 14px; color: var(--amber); font-size: 0.92rem; }
+
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+.term {
+  background: var(--term);
+  color: var(--term-text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  height: 460px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.term div { white-space: pre-wrap; overflow-wrap: anywhere; }
+.term .tag { color: var(--tag); font-weight: 700; }
+.term .err { color: #ff8b92; }
+.term .ok { color: #79e0b0; }
+.term .dim { color: var(--muted); }
+
+.cards { display: grid; gap: 12px; }
+.card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.ico {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--grey);
+}
+.ico svg { width: 24px; height: 24px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ico.green { background: #1f9d6a; }
+.ico.amber { background: #b8860b; }
+.ico.red { background: var(--off); }
+.ico.blue { background: var(--blue); }
+.card small { display: block; color: var(--muted); font-size: 0.8rem; }
+.card strong { display: block; font-size: 1.05rem; font-weight: 600; overflow-wrap: anywhere; }
+
+.panel { display: none; }
+.panel.on { display: block; }
+
+.runs { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.runs li {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+.runs li:last-child { border-bottom: 0; }
+.runs .st { text-align: center; font-weight: 700; }
+.runs .st.success { color: var(--green); }
+.runs .st.failure { color: #ff8b92; }
+.runs .st.running { color: var(--amber); }
+.runs .st.other { color: var(--muted); }
+.runs .meta { color: var(--muted); font-size: 0.85rem; }
+.runs .empty { display: block; color: var(--muted); }
+
+.settings { max-width: 640px; }
+.settings h2 { margin: 0 0 8px; font-size: 1.15rem; }
+.settings p, .settings li { color: var(--muted); font-size: 0.93rem; line-height: 1.55; }
+.settings ul { padding-left: 20px; }
+.settings .warn { color: var(--amber); }
+.row { display: flex; gap: 10px; margin: 14px 0; flex-wrap: wrap; }
+.row input {
+  flex: 1 1 260px;
+  min-width: 0;
+  background: var(--term);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+}
+.row button {
+  border: 0;
+  border-radius: 6px;
+  padding: 10px 18px;
+  color: #fff;
+  background: var(--blue);
+  font-weight: 600;
+  cursor: pointer;
+}
+.row button.alt { background: var(--grey); }
+
+footer { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 0 20px 28px; }
+
+@media (max-width: 880px) {
+  .grid { grid-template-columns: 1fr; }
+  .term { height: 340px; }
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .card { padding: 12px; gap: 10px; }
+}
+@media (max-width: 520px) {
+  .cards { grid-template-columns: 1fr; }
+  h1 { font-size: 1.6rem; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="brand">Stream Panel</span>
+  <a id="repo-link" href="#" rel="noopener" target="_blank">Source on GitHub</a>
+</header>
+<nav class="tabs" role="tablist" aria-label="Sections">
+  <button role="tab" id="tab-console" aria-selected="true" aria-controls="p-console">Console</button>
+  <button role="tab" id="tab-activity" aria-selected="false" aria-controls="p-activity">Activity</button>
+  <button role="tab" id="tab-settings" aria-selected="false" aria-controls="p-settings">Settings</button>
+</nav>
+
+<main>
+  <div class="head">
+    <div>
+      <h1 id="title">Streaming 24/7</h1>
+      <p class="sub">Discord streaming status, run by GitHub Actions</p>
+    </div>
+    <div class="power" role="group" aria-label="Power controls">
+      <button class="start" id="b-start" type="button">Start</button>
+      <button id="b-restart" type="button">Restart</button>
+      <button class="stop" id="b-stop" type="button">Stop</button>
+    </div>
+  </div>
+  <p class="note" id="note" role="status" aria-live="polite"></p>
+
+  <section class="panel on" id="p-console" role="tabpanel" aria-labelledby="tab-console">
+    <div class="grid">
+      <div class="term" id="term" role="log" aria-live="off" aria-label="Console output"></div>
+      <div class="cards">
+        <div class="card"><div class="ico blue"><svg viewBox="0 0 24 24"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01"/></svg></div><div><small>Runner</small><strong>GitHub Actions</strong></div></div>
+        <div class="card"><div class="ico" id="i-status"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div><div><small>Status</small><strong id="v-status">Checking...</strong></div></div>
+        <div class="card"><div class="ico" id="i-up"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><div><small>Uptime</small><strong id="v-up">-</strong></div></div>
+        <div class="card"><div class="ico" id="i-dc"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div><div><small>Discord status</small><strong id="v-dc">-</strong></div></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/></svg></div><div><small>Next shift starts in</small><strong id="v-next">-</strong></div></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9h16M9 9v11"/></svg></div><div><small>Last status update</small><strong id="v-upd">-</strong></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="p-activity" role="tabpanel" aria-labelledby="tab-activity">
+    <ul class="runs" id="runs"><li><span></span><span class="empty">Loading...</span><span></span></li></ul>
+  </section>
+
+  <section class="panel settings" id="p-settings" role="tabpanel" aria-labelledby="tab-settings">
+    <h2>Control the runner from this page</h2>
+    <p>Viewing works without any setup. To use Start, Restart and Stop here, create a GitHub access token and paste it below. Without one, those buttons open the matching GitHub page instead.</p>
+    <ul>
+      <li>GitHub &gt; Settings &gt; Developer settings &gt; Fine-grained tokens &gt; Generate new token.</li>
+      <li>Repository access: only this repository. Permissions: Actions (read and write), Variables (read and write). Expiry: 30 days.</li>
+    </ul>
+    <p class="warn">This is a GitHub token, not your Discord token. Never paste your Discord token here or anywhere in a web page.</p>
+    <div class="row">
+      <input id="pat" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_..." aria-label="GitHub access token">
+      <button id="pat-save" type="button">Save for this tab</button>
+      <button id="pat-clear" type="button" class="alt">Remove</button>
+    </div>
+    <p id="pat-state">No token saved.</p>
+    <p>The token is kept only in this browser tab (session storage) and is sent only to api.github.com. Closing the tab removes it.</p>
+  </section>
+</main>
+<footer>Status is published by the running shift about every 10 minutes; GitHub run data refreshes every minute or two.</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var WORKFLOW = "stream-247.yml";
+  var SHIFT_MS = 340 * 60 * 1000;      // matches SHIFT_MIN in the workflow
+  var FRESH_MS = 16 * 60 * 1000;       // a status older than this no longer counts
+  var API = "https://api.github.com";
+
+  var owner = "", repo = "", branch = "main";
+  var runs = [], status = null, runnerOff = null, rateLimited = false, busy = false, lastPoll = 0;
+
+  function $(id) { return document.getElementById(id); }
+  function pad(n) { return n < 10 ? "0" + n : String(n); }
+
+  function fmtDur(ms) {
+    if (!(ms > 0)) ms = 0;
+    var s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    if (h) return h + "h " + pad(m) + "m " + pad(x) + "s";
+    if (m) return m + "m " + pad(x) + "s";
+    return x + "s";
+  }
+  function fmtShort(ms) {
+    var m = Math.max(0, Math.round(ms / 60000)), h = Math.floor(m / 60);
+    return h ? h + "h " + pad(m % 60) + "m" : m + " min";
+  }
+  function ago(ms) {
+    var m = Math.floor(ms / 60000);
+    if (m < 1) return "just now";
+    if (m < 60) return m + " min ago";
+    return Math.floor(m / 60) + " h ago";
+  }
+  function when(iso) {
+    try { return new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+    catch (e) { return iso; }
+  }
+
+  // ---- token (this tab only) ----
+  function getPat() { try { return sessionStorage.getItem("gh_panel_token") || ""; } catch (e) { return ""; } }
+  function setPat(v) {
+    try { if (v) sessionStorage.setItem("gh_panel_token", v); else sessionStorage.removeItem("gh_panel_token"); }
+    catch (e) { say("This browser blocks session storage, so the token cannot be kept."); }
+  }
+
+  function say(msg) { $("note").textContent = msg || ""; }
+
+  // ---- GitHub API ----
+  function gh(path, opts) {
+    opts = opts || {};
+    var headers = { "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+    var pat = getPat();
+    if (pat) headers["Authorization"] = "Bearer " + pat;
+    var init = { method: opts.method || "GET", headers: headers, cache: "no-store" };
+    if (opts.body) { headers["Content-Type"] = "application/json"; init.body = JSON.stringify(opts.body); }
+    return fetch(API + path, init).then(function (r) {
+      if (r.status === 204) return null;
+      if (r.ok) return r.json();
+      var e = new Error("GitHub answered " + r.status);
+      e.status = r.status;
+      if (r.status === 403 || r.status === 429) e.rate = r.headers.get("x-ratelimit-remaining") === "0";
+      throw e;
+    });
+  }
+  function repoPath(p) { return "/repos/" + owner + "/" + repo + p; }
+
+  function loadConfig() {
+    return fetch("config.json", { cache: "no-cache" })
+      .then(function (r) { return r.ok ? r.json() : {}; })
+      .catch(function () { return {}; })
+      .then(function (c) {
+        var m = /github\.com\/([^\/]+)\/([^\/#?]+)/.exec(c.repo || "");
+        if (m) { owner = m[1]; repo = m[2].replace(/\.git$/, ""); }
+        else if (/\.github\.io$/.test(location.hostname)) {
+          owner = location.hostname.split(".")[0];
+          repo = location.pathname.split("/")[1] || "";
+        }
+      });
+  }
+
+  // ---- data ----
+  function poll() {
+    if (!owner || !repo) { paintLog(); say("Set \"repo\" in docs/config.json so this page knows which repository to watch."); return Promise.resolve(); }
+    lastPoll = Date.now();
+    var jobs = [
+      gh(repoPath("/actions/workflows/" + WORKFLOW + "/runs?per_page=20")).then(function (d) { runs = d.workflow_runs || []; rateLimited = false; }),
+      fetch("https://raw.githubusercontent.com/" + owner + "/" + repo + "/live-status/status.json?t=" + Date.now(), { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+        .then(function (s) { status = s; })
+    ];
+    if (getPat()) {
+      jobs.push(gh(repoPath("/actions/variables/STREAM_RUNNER")).then(function (v) { runnerOff = v && v.value === "off"; }, function (e) { if (e.status === 404) runnerOff = false; }));
+    } else { runnerOff = null; }
+    return Promise.all(jobs).then(function () { say(""); }).catch(function (e) {
+      if (e.rate || e.status === 429) { rateLimited = true; say("GitHub rate limit reached (60 requests an hour without a token). Add a token in Settings or wait a bit."); }
+      else if (e.status === 404) say("Repository " + owner + "/" + repo + " was not found or is private.");
+      else say("Could not reach GitHub (" + e.message + "). Retrying.");
+    }).then(function () { paintAll(); });
+  }
+
+  function activeRuns() {
+    return runs.filter(function (r) { return r.status === "in_progress"; })
+      .sort(function (a, b) { return new Date(a.run_started_at) - new Date(b.run_started_at); });
+  }
+  function queuedRuns() {
+    return runs.filter(function (r) { return r.status === "queued" || r.status === "waiting" || r.status === "pending" || r.status === "requested"; });
+  }
+  function statusFresh(active) {
+    if (!status || !status.updated) return false;
+    if (Date.now() - new Date(status.updated) > FRESH_MS) return false;
+    return active.some(function (r) { return String(r.id) === String(status.run_id); });
+  }
+
+  // ---- painting ----
+  function setIco(id, cls) { $(id).className = "ico" + (cls ? " " + cls : ""); }
+
+  function paintClock() {
+    var active = activeRuns(), now = Date.now(), cur = active[0];
+    if (cur) {
+      var start = new Date(cur.run_started_at).getTime();
+      $("v-up").textContent = fmtDur(now - start);
+      var left = start + SHIFT_MS - now;
+      $("v-next").textContent = left > 0 ? fmtShort(left) : "any moment";
+      setIco("i-up", "green");
+    } else {
+      $("v-up").textContent = "Offline";
+      $("v-next").textContent = queuedRuns().length ? "queued" : "-";
+      setIco("i-up", "red");
+    }
+    $("v-upd").textContent = status && status.updated ? ago(now - new Date(status.updated)) : "-";
+  }
+
+  function paintStatus() {
+    var active = activeRuns(), queued = queuedRuns(), cur = active[0], fresh = statusFresh(active);
+    var label, cls;
+    if (cur && fresh && status.discord_ready) { label = "Online"; cls = "green"; }
+    else if (cur && Date.now() - new Date(cur.run_started_at) < 5 * 60 * 1000) { label = "Starting"; cls = "amber"; }
+    else if (cur) { label = "Running"; cls = "amber"; }
+    else if (queued.length) { label = "Starting"; cls = "amber"; }
+    else if (runnerOff) { label = "Stopped"; cls = "red"; }
+    else { label = "Offline"; cls = "red"; }
+    $("v-status").textContent = label;
+    setIco("i-status", cls);
+
+    var dc, dcls;
+    if (cur && fresh) { dc = status.discord_ready ? "Streaming status live" : "Not logged in yet"; dcls = status.discord_ready ? "green" : "amber"; }
+    else if (cur) { dc = "Waiting for status"; dcls = "amber"; }
+    else { dc = "Not running"; dcls = "red"; }
+    $("v-dc").textContent = dc;
+    setIco("i-dc", dcls);
+
+    $("b-start").disabled = busy || !!cur || !!queued.length;
+    $("b-restart").disabled = busy || (!cur && !queued.length);
+    $("b-stop").disabled = busy || (!cur && !queued.length && runnerOff === true);
+  }
+
+  function line(box, tag, text, cls) {
+    var d = document.createElement("div");
+    if (tag) {
+      var t = document.createElement("span");
+      t.className = "tag";
+      t.textContent = "[" + tag + "] ";
+      d.appendChild(t);
+    }
+    var s = document.createElement("span");
+    if (cls) s.className = cls;
+    s.textContent = text;
+    d.appendChild(s);
+    box.appendChild(d);
+  }
+
+  function paintLog() {
+    var box = $("term"), atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+    box.textContent = "";
+    var active = activeRuns(), cur = active[0];
+    line(box, "Runner", "Repository: " + (owner ? owner + "/" + repo : "not set"));
+    if (rateLimited) line(box, "Runner", "GitHub rate limit reached. Add a token in Settings or wait a few minutes.", "err");
+    if (cur) {
+      line(box, "Runner", "Shift #" + cur.run_number + " online since " + when(cur.run_started_at) + " (" + cur.event + ")", "ok");
+      if (active.length > 1) line(box, "Runner", "Hand-over in progress: " + active.length + " shifts overlap for a few minutes so the status never drops.", "dim");
+      if (statusFresh(active)) {
+        line(box, "Bot", "Output from the running bot (last 40 lines, updated " + ago(Date.now() - new Date(status.updated)) + "):", "dim");
+        (status.log || []).forEach(function (l) { line(box, "", String(l)); });
+      } else {
+        line(box, "Runner", "Waiting for the first status. It appears about a minute after a shift starts and then updates every 10 minutes.", "dim");
+      }
+      line(box, "Runner", "Full live log: " + cur.html_url, "dim");
+    } else if (queuedRuns().length) {
+      line(box, "Runner", "A shift is queued and will start in a moment.", "ok");
+    } else if (runnerOff) {
+      line(box, "Runner", "Stopped. The variable STREAM_RUNNER is off, so no shift will start until you press Start.", "err");
+    } else {
+      line(box, "Runner", "Offline. Press Start, or wait for the hourly check to start a shift.", "err");
+    }
+    if (atEnd) box.scrollTop = box.scrollHeight;
+  }
+
+  function paintRuns() {
+    var ul = $("runs");
+    ul.textContent = "";
+    if (!runs.length) {
+      var li0 = document.createElement("li");
+      li0.appendChild(document.createElement("span"));
+      var e = document.createElement("span");
+      e.className = "empty";
+      e.textContent = "No runs yet. Press Start to begin the first shift.";
+      li0.appendChild(e);
+      ul.appendChild(li0);
+      return;
+    }
+    runs.forEach(function (r) {
+      var li = document.createElement("li"), st = document.createElement("span"), mid = document.createElement("span"), a = document.createElement("a");
+      var cls = "other", glyph = "-";
+      if (r.status === "completed" && r.conclusion === "success") { cls = "success"; glyph = "\u2713"; }
+      else if (r.status === "completed" && r.conclusion === "failure") { cls = "failure"; glyph = "\u2715"; }
+      else if (r.status === "completed") { cls = "other"; glyph = "\u2298"; }
+      else { cls = "running"; glyph = "\u25B6"; }
+      st.className = "st " + cls;
+      st.textContent = glyph;
+      a.href = r.html_url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = "Shift #" + r.run_number;
+      mid.appendChild(a);
+      var meta = document.createElement("div");
+      meta.className = "meta";
+      var end = r.status === "completed" ? new Date(r.updated_at).getTime() : Date.now();
+      meta.textContent = r.event + " \u00B7 " + when(r.run_started_at || r.created_at) + " \u00B7 " + fmtDur(end - new Date(r.run_started_at || r.created_at).getTime());
+      mid.appendChild(meta);
+      var right = document.createElement("span");
+      right.className = "meta";
+      right.textContent = r.status === "completed" ? (r.conclusion || "done") : r.status.replace("_", " ");
+      li.appendChild(st);
+      li.appendChild(mid);
+      li.appendChild(right);
+      ul.appendChild(li);
+    });
+  }
+
+  function paintAll() { paintStatus(); paintClock(); paintLog(); paintRuns(); }
+
+  // ---- power controls ----
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function setRunnerVar(value) {
+    var path = repoPath("/actions/variables/STREAM_RUNNER");
+    return gh(path, { method: "PATCH", body: { name: "STREAM_RUNNER", value: value } }).catch(function (e) {
+      if (e.status === 404) return gh(repoPath("/actions/variables"), { method: "POST", body: { name: "STREAM_RUNNER", value: value } });
+      throw e;
+    });
+  }
+  function cancelRuns() {
+    var all = activeRuns().concat(queuedRuns());
+    return Promise.all(all.map(function (r) {
+      return gh(repoPath("/actions/runs/" + r.id + "/cancel"), { method: "POST" }).catch(function (e) { if (e.status !== 409) throw e; });
+    }));
+  }
+  function dispatch(handoff) {
+    return gh(repoPath("/actions/workflows/" + WORKFLOW + "/dispatches"), { method: "POST", body: { ref: branch, inputs: { handoff: String(handoff) } } });
+  }
+
+  function withoutToken(kind) {
+    var base = "https://github.com/" + owner + "/" + repo;
+    if (kind === "stop") {
+      say("No access token saved, so opening GitHub: set the variable STREAM_RUNNER to off, then cancel the running shift in Actions.");
+      window.open(base + "/settings/variables/actions", "_blank", "noopener");
+    } else {
+      say("No access token saved, so opening GitHub: press Run workflow. Add a token in Settings to do this from here.");
+      window.open(base + "/actions/workflows/" + WORKFLOW, "_blank", "noopener");
+    }
+  }
+
+  function act(kind) {
+    if (!owner) return;
+    if (!getPat()) { withoutToken(kind); return; }
+    if (kind === "stop" && !window.confirm("Stop the streaming status? It stays off until you press Start.")) return;
+    if (kind === "restart" && !window.confirm("Restart? The status drops for under a minute.")) return;
+    busy = true;
+    paintStatus();
+    say(kind === "start" ? "Starting..." : kind === "stop" ? "Stopping..." : "Restarting...");
+    var p;
+    if (kind === "start") p = setRunnerVar("on").then(function () { return dispatch(false); });
+    else if (kind === "stop") p = setRunnerVar("off").then(cancelRuns);
+    else p = setRunnerVar("on").then(cancelRuns).then(function () { return sleep(4000); }).then(function () { return dispatch(true); });
+    p.then(function () { say(kind === "stop" ? "Stop requested." : "Start requested. A shift should appear in under a minute."); return sleep(3000); })
+      .catch(function (e) {
+        if (e.status === 401) say("GitHub rejected the token. Check it in Settings.");
+        else if (e.status === 403 || e.status === 404) say("The token cannot do that. It needs Actions (read and write) and Variables (read and write) on this repository.");
+        else say("That did not work (" + e.message + ").");
+      })
+      .then(function () { busy = false; return poll(); });
+  }
+
+  // ---- wiring ----
+  function show(name) {
+    ["console", "activity", "settings"].forEach(function (n) {
+      var on = n === name;
+      $("tab-" + n).setAttribute("aria-selected", on ? "true" : "false");
+      $("p-" + n).className = "panel" + (n === "settings" ? " settings" : "") + (on ? " on" : "");
+    });
+  }
+  ["console", "activity", "settings"].forEach(function (n) { $("tab-" + n).addEventListener("click", function () { show(n); }); });
+
+  $("b-start").addEventListener("click", function () { act("start"); });
+  $("b-restart").addEventListener("click", function () { act("restart"); });
+  $("b-stop").addEventListener("click", function () { act("stop"); });
+
+  function patState() { $("pat-state").textContent = getPat() ? "A token is saved for this tab." : "No token saved."; }
+  $("pat-save").addEventListener("click", function () {
+    var v = $("pat").value.trim();
+    if (!v) { say("Paste a GitHub token first."); return; }
+    if (/^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{20,}$/.test(v)) { say("That looks like a Discord token. Do not paste it here. This box is for a GitHub token."); $("pat").value = ""; return; }
+    setPat(v);
+    $("pat").value = "";
+    patState();
+    say("Token saved for this tab.");
+    poll();
+  });
+  $("pat-clear").addEventListener("click", function () { setPat(""); $("pat").value = ""; patState(); say("Token removed."); poll(); });
+
+  document.addEventListener("visibilitychange", function () { if (!document.hidden && Date.now() - lastPoll > 30000) poll(); });
+  setInterval(paintClock, 1000);
+  setInterval(function () {
+    if (document.hidden) return;
+    if (Date.now() - lastPoll >= (getPat() ? 45000 : 120000)) poll();
+  }, 5000);
+
+  loadConfig().then(function () {
+    if (owner) $("repo-link").href = "https://github.com/" + owner + "/" + repo;
+    patState();
+    return (owner ? gh(repoPath("")).then(function (r) { if (r && r.default_branch) branch = r.default_branch; }).catch(function () {}) : Promise.resolve());
+  }).then(poll);
+})();
+</script>
+</body>
+</html>
