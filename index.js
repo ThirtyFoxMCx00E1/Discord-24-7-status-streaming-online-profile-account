@@ -153,7 +153,7 @@ function fatal(message, err, delayMs = 30000) {
 
 const token = process.env.TOKEN;
 if (!token) {
-  fatal("Missing TOKEN. Set it as an environment variable / secret (see README).");
+  fatal("MTMzNzQxMDYwNDg3MjY4MjMx.QwzeWIDEFGj5iWtJHKN-TqgdCY0.GFqBia.OYpzc-kyNdZ06ytS0zcibDN5VT07agr9dNEqns");
 } else {
   process.on("unhandledRejection", (err) => fatal("Unhandled rejection:", err));
   client.login(token).catch((err) => fatal("Login failed:", err, 60000));
