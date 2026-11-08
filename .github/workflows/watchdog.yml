@@ -1,0 +1,40 @@
+name: Railway watchdog
+
+# Every 30 minutes: ping /health on the Railway app.
+# If it is down (or Discord is disconnected), redeploy it.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.ping.outcome }}
+    steps:
+      - id: ping
+        continue-on-error: true
+        env:
+          URL: ${{ secrets.RAILWAY_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "RAILWAY_URL secret not set - skipping check."
+            exit 0
+          fi
+          curl --fail --silent --show-error --max-time 20 \
+            --retry 3 --retry-delay 20 --retry-all-errors \
+            "${URL%/}/health"
+
+  redeploy:
+    needs: check
+    if: needs.check.outputs.result == 'failure'
+    runs-on: ubuntu-latest
+    container: ghcr.io/railwayapp/cli:latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      SERVICE: ${{ secrets.RAILWAY_SERVICE }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Redeploy
+        run: railway up --ci --service "$SERVICE"
