@@ -42,7 +42,9 @@ const client = new Discord.Client({
   checkUpdate: false,
 });
 
-keepAlive(() => client.isReady());
+if (process.env.PORT || process.env.KEEPALIVE === "1") {
+  keepAlive(() => client.isReady());
+}
 
 function getTimeData() {
   const date = new Date();
@@ -94,7 +96,9 @@ function addButtons(presence) {
 }
 
 client.on("ready", async () => {
-  console.log(`${client.user.tag} - rich presence started!`);
+  // Public Actions logs: do not print the account name there.
+  const who = process.env.GITHUB_ACTIONS ? "account" : client.user.tag;
+  console.log(`${who} - rich presence started!`);
 
   const { timeString, currentHour } = getTimeData();
   const emoji = getEmoji(currentHour);
@@ -131,19 +135,17 @@ client.on("ready", async () => {
 });
 
 // The token is read from the environment - never paste it into this file.
-const token = process.env.TOKEN;
-if (!token) {
-  console.error("Missing TOKEN. Set it as an environment variable (see README).");
-  process.exit(1);
+// On a fatal error we wait before exiting, so a supervisor that restarts us
+// (systemd, MP Railway, the GitHub runner) can't hammer Discord with logins.
+function fatal(message, err, delayMs = 30000) {
+  console.error(message, err && err.message ? err.message : err || "");
+  setTimeout(() => process.exit(1), delayMs);
 }
 
-// If something fatal happens, exit so Railway restarts the app.
-process.on("unhandledRejection", (err) => {
-  console.error("Unhandled rejection:", err);
-  process.exit(1);
-});
-
-client.login(token).catch((err) => {
-  console.error("Login failed:", err.message);
-  process.exit(1);
-});
+const token = process.env.TOKEN;
+if (!token) {
+  fatal("Missing TOKEN. Set it as an environment variable / secret (see README).");
+} else {
+  process.on("unhandledRejection", (err) => fatal("Unhandled rejection:", err));
+  client.login(token).catch((err) => fatal("Login failed:", err, 60000));
+}

@@ -1,0 +1,143 @@
+# 24/7 Discord streaming status on GitHub Actions - the same "cloud runner" idea as wagu's
+# mp-247-servers.yml: each run is one ~5 h 40 min shift and queues the next shift itself.
+# The next shift starts BEFORE the old one stops (small overlap), so the status never drops.
+# The hourly cron is only a safety net that restarts the chain if a shift ever failed.
+#
+# Setup (repo > Settings > Secrets and variables > Actions):
+#   Secret   TOKEN             your Discord account token (never put it in the code)
+#   Variable YT_CHANNEL_URL    e.g. https://www.youtube.com/@yourhandle   (Subscribe / Join buttons)
+#   Optional variables: BUTTONS (e.g. watch,join), VIDEO_URL, STATUS, TIMEZONE
+# Then: Actions > "Streaming 24/7 runner" > Run workflow (once). Turn it off: variable STREAM_RUNNER = off.
+# Needs a PUBLIC repo (a private repo would use up the free Actions minutes in about a day and a half).
+name: Streaming 24/7 runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      handoff:
+        description: 'Started by the previous shift (internal)'
+        required: false
+        default: 'false'
+  push:
+    branches: [main]
+    paths: ['index.js', 'server.js', 'package.json', 'package-lock.json', '.github/workflows/stream-247.yml']
+  schedule:
+    - cron: '7 * * * *'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  shift:
+    if: vars.STREAM_RUNNER != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RUN_ID: ${{ github.run_id }}
+      TOKEN: ${{ secrets.TOKEN }}
+      YT_CHANNEL_URL: ${{ vars.YT_CHANNEL_URL }}
+      BUTTONS: ${{ vars.BUTTONS }}
+      VIDEO_URL: ${{ vars.VIDEO_URL }}
+      STATUS: ${{ vars.STATUS }}
+      TIMEZONE: ${{ vars.TIMEZONE }}
+      SHIFT_MIN: 340        # queue the next shift after this many minutes
+      OVERLAP_MIN: 4        # keep running this long after the next shift was queued
+    steps:
+      - name: Skip if a shift is already running
+        id: guard
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.handoff }}" = "true" ]; then
+            echo "run=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          # a failed lookup must never count as "nothing running" (that would start a second chain)
+          n=""
+          for i in 1 2 3; do
+            n=$(gh run list -R "$GITHUB_REPOSITORY" -w stream-247.yml -s in_progress --json databaseId \
+                 --jq "[.[] | select(.databaseId != $RUN_ID)] | length") && break
+            n=""; sleep 10
+          done
+          if [ -z "$n" ]; then echo "Could not read the running shifts - not starting (the hourly check tries again)."; echo "run=0" >> "$GITHUB_OUTPUT"
+          elif [ "$n" -gt 0 ]; then echo "A shift is already online - nothing to do."; echo "run=0" >> "$GITHUB_OUTPUT"
+          else echo "run=1" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Check the TOKEN secret
+        if: steps.guard.outputs.run == '1'
+        run: |
+          [ -n "$TOKEN" ] || { echo "::error title=Streaming runner::Add the repo secret TOKEN (Settings > Secrets and variables > Actions)"; exit 1; }
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.run == '1'
+
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.run == '1'
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        if: steps.guard.outputs.run == '1'
+        run: npm ci --omit=dev || npm install --omit=dev
+
+      - name: Run the bot (one shift)
+        if: steps.guard.outputs.run == '1'
+        shell: bash {0}   # no -e: a failed fetch or a crash must never end the shift by accident
+        run: |
+          rm -f bot.dead
+          # supervisor: restarts the bot if it crashes; gives up after 3 start-ups in a row that die early
+          (
+            fails=0
+            while true; do
+              started=$(date +%s)
+              node index.js
+              code=$?
+              up=$(( $(date +%s) - started ))
+              if [ "$up" -lt 90 ]; then fails=$((fails + 1)); else fails=0; fi
+              echo "bot exited (code $code) after ${up}s"
+              if [ "$fails" -ge 3 ]; then echo "bot keeps dying at start-up - giving up"; touch bot.dead; exit 1; fi
+              sleep 10
+            done
+          ) > bot.log 2>&1 &
+          SUP=$!
+
+          stop_bot() { kill "$SUP" 2>/dev/null; pkill -f "node index.js" 2>/dev/null; }
+
+          # another shift newer than this one (not our own successor - we haven't queued it yet) and older
+          # than 3 minutes = a duplicate chain: this older shift stops, so only one copy is logged in
+          newer() {
+            gh run list -R "$GITHUB_REPOSITORY" -w stream-247.yml -s in_progress -L 20 --json databaseId,createdAt \
+              --jq "[.[] | select(.databaseId > $RUN_ID) | select((now - (.createdAt | fromdateiso8601)) > 180)] | length" 2>/dev/null || echo 0
+          }
+          handover() { echo "A newer shift is already online (duplicate) - stopping this one"; stop_bot; exit 0; }
+
+          end=$(( $(date +%s) + SHIFT_MIN * 60 ))
+          last=$(date +%s)
+          while [ "$(date +%s)" -lt "$end" ]; do
+            sleep 60
+            if [ -f bot.dead ]; then
+              echo "::error title=Streaming runner::The bot keeps dying at start-up. Check the TOKEN secret (it may be invalid or reset)."
+              tail -n 20 bot.log; exit 1
+            fi
+            now=$(date +%s)
+            if [ $(( now - last )) -ge 600 ]; then
+              last=$now
+              [ "$(newer)" -gt 0 ] && handover
+              # hot update: a push to main is picked up by the shift that is already online
+              if git fetch -q --depth 1 origin "$GITHUB_REF_NAME" 2>/dev/null \
+                 && ! git diff --quiet HEAD FETCH_HEAD -- index.js server.js package.json package-lock.json; then
+                echo "New code on $GITHUB_REF_NAME - updating the running bot"
+                git reset -q --hard FETCH_HEAD
+                npm ci --omit=dev >/dev/null 2>&1 || npm install --omit=dev >/dev/null 2>&1
+                pkill -f "node index.js"      # the supervisor starts it again with the new code
+              fi
+              tail -n 3 bot.log
+            fi
+          done
+
+          [ "$(newer)" -gt 0 ] && handover      # never start a second chain
+          echo "Queueing the next shift"
+          gh workflow run stream-247.yml -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" -f handoff=true \
+            || echo "queueing failed - the hourly safety net will start the next shift"
+          sleep $(( OVERLAP_MIN * 60 ))
+          stop_bot
+          exit 0

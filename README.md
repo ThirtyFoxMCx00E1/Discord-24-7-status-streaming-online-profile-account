@@ -29,26 +29,38 @@ Discord allows **2** custom buttons. Choose which two with `BUTTONS`:
 
 Default: `BUTTONS=watch,subscribe`.
 
-## Deploy 24/7 on Railway
+## Run it 24/7
 
-1. Push this repo to GitHub.
-2. Railway > New Project > Deploy from GitHub repo > pick this repo.
-3. In the Railway service > **Variables**, add `TOKEN` and `YT_CHANNEL_URL`.
-4. Service > Settings > Networking > **Generate Domain** (needed for the watchdog).
-5. Railway project > Settings > Tokens > create a **project token**.
-6. In GitHub: repo > Settings > Secrets and variables > Actions, add:
-   - `RAILWAY_TOKEN` - the project token from step 5
-   - `RAILWAY_SERVICE` - the Railway service name or ID
-   - `RAILWAY_URL` - e.g. `https://your-app.up.railway.app`
+### Option A - GitHub Actions runner (like wagu's cloud runner)
 
-What runs:
+No server needed. `.github/workflows/stream-247.yml` runs the bot in ~5 h 40 min shifts and
+queues the next shift itself, starting it a few minutes early so the status never drops.
+An hourly check restarts the chain if a shift ever failed, and a push to `main` is hot-loaded
+by the shift that is already running.
 
-- `railway.json` restarts the app if it crashes (up to 10 times).
-- `.github/workflows/deploy.yml` redeploys on every push to `main`.
-- `.github/workflows/watchdog.yml` checks `/health` every 30 minutes and
-  redeploys if the app is down or Discord is disconnected.
+1. Keep the repo **public** (a private repo would use up the free Actions minutes in about a day and a half).
+2. Settings > Secrets and variables > Actions:
+   - Secret `TOKEN` - your Discord token
+   - Variable `YT_CHANNEL_URL` - e.g. `https://www.youtube.com/@yourhandle`
+   - Optional variables: `BUTTONS`, `VIDEO_URL`, `STATUS`, `TIMEZONE`
+3. Actions > **Streaming 24/7 runner** > Run workflow (once).
+4. Stop it: set the variable `STREAM_RUNNER` to `off`.
 
-Your Discord `TOKEN` goes **only** in Railway Variables - never in GitHub secrets, code or commits.
+### Option B - MP Railway (your own server or a Termux phone)
+
+On the machine that runs MP Railway:
+
+```
+sudo mp-railway add stream https://github.com/ThirtyFoxMCx00E1/Discord-24-7-status-streaming-online-profile-account.git
+sudo mp-railway env set TOKEN "" stream            # asks for the token, hidden
+sudo mp-railway env set YT_CHANNEL_URL https://www.youtube.com/@yourhandle stream
+sudo mp-railway status stream
+```
+
+It restarts the bot on a crash and after a reboot, and deploys every new commit on `main` within 2 minutes.
+A phone or home connection is also less likely to look suspicious to Discord than a datacenter address.
+
+Your Discord token goes **only** in the GitHub secret / MP Railway env - never in code or commits.
 
 ## Never share your token
 
